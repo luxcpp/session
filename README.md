@@ -1,53 +1,153 @@
-# Oxen Storage Server
+# Session Storage Server
 
-Storage server for Oxen Service Nodes
+High-performance C++ storage server for the Lux Session network with GPU acceleration.
 
-## Binary releases
+## Overview
 
-Pre-built releases (with system service files) are available for Ubuntu/Debian on
-https://deb.oxen.io and are recommended for simple deployment and updates on those distributions.
+This is the C++ implementation of the Session storage server, designed for high-throughput message storage and retrieval with post-quantum cryptographic security. It provides the backend infrastructure for the [SessionVM](https://github.com/luxfi/session) ecosystem.
 
-## Building from source
+## Features
 
-The default build compiles for the current system and requires the following be installed (including
-headers/dev packages for the libraries):
+- **High Performance**: Optimized C++ implementation with GPU acceleration
+- **Post-Quantum Crypto**: ML-KEM-768 and ML-DSA-65 via [luxcpp/crypto](https://github.com/luxcpp/crypto)
+- **GPU Acceleration**: Metal (Apple), CUDA (NVIDIA), WebGPU support
+- **CGO Bindings**: Seamless integration with Go applications
+- **Swarm Architecture**: Distributed storage across service nodes
 
-Requirements:
-* cmake >= 3.10
-* OpenSSL >= 1.1.1
-* libsodium >= 1.0.17
-* pkg-config (any version)
-* libcurl
-* jemalloc (not strictly required but recommended for reduced long-term memory use)
-* autoconf (for building jemalloc)
+## Building from Source
 
-Other dependencies will be used from the system if found, but if not found will be compiled and
-built statically from bundled versions:
-* spdlog >= 1.8
-* libzmq >= 4.3
-* oxen-mq >= 1.2.6
-* oxen-encoding >= 1.0.1
-* sqlite >= 3.35.5
+### Requirements
 
-You can, however, instruct the build to download and build static versions of all of these
-dependencies (other than autoconf) as part of the build by adding the `-D BUILD_STATIC_DEPS=ON`
-option to the `cmake` command below.  (This will, however, result in a slower build and larger,
-slower binary, as is typical for static builds).
+- CMake >= 3.16
+- C++20 compatible compiler
+- OpenSSL >= 1.1.1
+- libsodium >= 1.0.17
+- pkg-config
+- libcurl
+- jemalloc (recommended)
 
-```
+### Build
+
+```bash
 git submodule update --init --recursive
-cmake -B build -S .. -D CMAKE_BUILD_TYPE=Release -G Ninja
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-The build will produce a `./build/oxen-storage` binary.  You can run it with `--help` to
-see supported run-time options.
+### With CGO Support
 
-# Running
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_CGO_LIB=ON
+cmake --build build --parallel
+```
 
-Oxen Storage Server is a required component of an Oxen Service Node and needs to talk to a running
-`oxend` in order to join the network.  The program defaults are designed to work with a default
-oxend, but for advanced configurations (e.g. to run on different ports) you may need to use other
-options.  Run the program with `--help` to see all available options.
+This produces `libsession_cgo.a` for Go integration.
 
-See https://docs.oxen.io/ for additional details on setting up and running an Oxen Service Node.
+### With GPU Acceleration
+
+```bash
+# Metal (macOS)
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_METAL=ON
+cmake --build build --parallel
+
+# CUDA (Linux/Windows)
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_CUDA=ON
+cmake --build build --parallel
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                   luxcpp/session                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │   daemon/   │  │   server/   │  │    storage/     │  │
+│  │   parsd     │  │  HTTPS/QUIC │  │    SQLite       │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │   snode/    │  │    rpc/     │  │    crypto/      │  │
+│  │   Swarm     │  │  Endpoints  │  │   PQ Adapter    │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                          │
+┌─────────────────────────▼───────────────────────────────┐
+│                   luxcpp/crypto                          │
+│  ┌────────────┐  ┌────────────┐  ┌──────────────────┐   │
+│  │  ML-KEM    │  │  ML-DSA    │  │    GPU Accel     │   │
+│  │   768      │  │    65      │  │  Metal/CUDA      │   │
+│  └────────────┘  └────────────┘  └──────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
+
+## CGO Integration
+
+The storage server can be linked into Go applications:
+
+```go
+// #cgo LDFLAGS: -L${SRCDIR}/lib -lsession_cgo
+// #include "session_cgo.h"
+import "C"
+
+func StoreMessage(sessionID string, data []byte) error {
+    // Call C++ storage backend
+}
+```
+
+## Directory Structure
+
+```
+session/
+├── cmake/           # CMake modules
+├── contrib/         # Scripts and utilities
+├── external/        # External dependencies
+├── include/         # Public headers (CGO)
+├── pars/            # Pars-specific integration
+│   ├── crypto/      # PQ crypto adapter
+│   ├── daemon/      # parsd daemon
+│   └── rpc/         # Lux RPC endpoints
+├── session/
+│   ├── common/      # Common types
+│   ├── crypto/      # Channel encryption
+│   ├── daemon/      # Storage daemon
+│   ├── http/        # HTTP client
+│   ├── logging/     # Logging
+│   ├── rpc/         # RPC endpoints
+│   ├── server/      # HTTPS/QUIC/OMQ servers
+│   ├── snode/       # Service node logic
+│   ├── storage/     # SQLite storage
+│   └── utils/       # Utilities
+├── src/             # CGO source
+└── unit_test/       # Unit tests
+```
+
+## Related Repositories
+
+- **[luxfi/session](https://github.com/luxfi/session)** - Go SessionVM implementation
+- **[luxcpp/crypto](https://github.com/luxcpp/crypto)** - C++ cryptographic primitives
+- **[luxcpp/gpu](https://github.com/luxcpp/gpu)** - GPU acceleration framework
+- **[luxcpp/metal](https://github.com/luxcpp/metal)** - Metal shaders (Apple)
+- **[luxcpp/cuda](https://github.com/luxcpp/cuda)** - CUDA kernels (NVIDIA)
+- **[parsdao/node](https://github.com/parsdao/node)** - Pars blockchain node
+
+## Testing
+
+```bash
+# Build and run unit tests
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+cmake --build build --parallel
+cd build && ctest --output-on-failure
+
+# Network integration tests
+cd network-tests
+pytest -v
+```
+
+## Documentation
+
+- [luxcpp.github.io](https://luxcpp.github.io) - C++ Libraries Documentation
+- [LIP-7001](https://github.com/luxfi/lips/blob/main/LIPs/lip-7001-dao-governance-standard.md) - DAO Governance Standard
+
+## License
+
+Copyright (C) 2019-2025, Lux Industries Inc. All rights reserved.
+See [LICENSE](./LICENSE) for details.
